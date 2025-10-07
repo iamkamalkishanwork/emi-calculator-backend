@@ -1,48 +1,35 @@
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
 const cors = require('cors');
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
 
-// Database setup - use in-memory for free hosting
-const db = new sqlite3.Database(':memory:', (err) => {
-    if (err) {
-        console.error('Database error:', err);
-    } else {
-        console.log('Connected to SQLite database');
-        // Create table
-        db.run(`CREATE TABLE IF NOT EXISTS calculations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            loan_amount REAL NOT NULL,
-            interest_rate REAL NOT NULL,
-            tenure_years INTEGER NOT NULL,
-            tenure_months INTEGER NOT NULL,
-            emi REAL NOT NULL,
-            total_interest REAL NOT NULL,
-            total_payment REAL NOT NULL,
-            loan_type TEXT NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )`);
-        
-        // Add some sample data
-        db.run(`INSERT INTO calculations (loan_amount, interest_rate, tenure_years, tenure_months, emi, total_interest, total_payment, loan_type) 
-                VALUES (5000000, 8.5, 20, 240, 43406, 5417440, 10417440, 'home')`);
-    }
-});
+// Simple in-memory storage (No database errors)
+let calculations = [{
+    id: 1,
+    loan_amount: 5000000,
+    interest_rate: 8.5,
+    tenure_years: 20,
+    emi: 43406,
+    total_interest: 5417440,
+    total_payment: 10417440,
+    loan_type: 'home',
+    timestamp: new Date().toISOString()
+}];
 
 // Routes
 app.get('/', (req, res) => {
     res.json({ 
-        message: 'EMI Calculator API is running!',
+        message: 'EMI Calculator API is running! 🚀',
+        status: 'OK',
+        version: '1.0',
         endpoints: {
             calculate: 'POST /api/calculate-emi',
             history: 'GET /api/calculation-history',
-            stats: 'GET /api/stats'
+            health: 'GET /health'
         }
     });
 });
@@ -76,19 +63,22 @@ app.post('/api/calculate-emi', (req, res) => {
     const totalPayment = emi * n;
     const totalInterest = totalPayment - p;
 
-    // Save to database
-    const stmt = db.prepare(`INSERT INTO calculations 
-        (loan_amount, interest_rate, tenure_years, tenure_months, emi, total_interest, total_payment, loan_type) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
-    
-    stmt.run([p, r, tenureYears, n, emi, totalInterest, totalPayment, loanType], function(err) {
-        if (err) {
-            console.error('Database save error:', err);
-        }
-    });
-    stmt.finalize();
+    // Save to memory
+    const calculation = {
+        id: calculations.length + 1,
+        loan_amount: p,
+        interest_rate: r,
+        tenure_years: tenureYears,
+        emi: parseFloat(emi.toFixed(2)),
+        total_interest: parseFloat(totalInterest.toFixed(2)),
+        total_payment: parseFloat(totalPayment.toFixed(2)),
+        loan_type: loanType,
+        timestamp: new Date().toISOString()
+    };
 
-    // Response
+    calculations.unshift(calculation);
+    calculations = calculations.slice(0, 10); // Keep only last 10
+
     res.json({
         success: true,
         data: {
@@ -96,68 +86,48 @@ app.post('/api/calculate-emi', (req, res) => {
             totalPayment: totalPayment.toFixed(2),
             totalInterest: totalInterest.toFixed(2),
             principalAmount: p.toFixed(2),
-            calculationId: this.lastID
+            calculationId: calculation.id
         }
     });
 });
 
 // Get calculation history
 app.get('/api/calculation-history', (req, res) => {
-    db.all(`SELECT * FROM calculations ORDER BY timestamp DESC LIMIT 10`, (err, rows) => {
-        if (err) {
-            return res.status(500).json({ 
-                success: false, 
-                message: 'Database error' 
-            });
-        }
-        res.json({
-            success: true,
-            data: rows
-        });
-    });
-});
-
-// Server stats
-app.get('/api/stats', (req, res) => {
-    db.get(`SELECT COUNT(*) as totalCalculations FROM calculations`, (err, countRow) => {
-        if (err) {
-            return res.status(500).json({ 
-                success: false, 
-                message: 'Database error' 
-            });
-        }
-
-        db.get(`SELECT SUM(loan_amount) as totalLoanAmount FROM calculations`, (err, sumRow) => {
-            if (err) {
-                return res.status(500).json({ 
-                    success: false, 
-                    message: 'Database error' 
-                });
-            }
-
-            res.json({
-                success: true,
-                data: {
-                    totalCalculations: countRow.totalCalculations,
-                    totalLoanAmount: sumRow.totalLoanAmount || 0,
-                    serverUptime: process.uptime()
-                }
-            });
-        });
+    res.json({
+        success: true,
+        data: calculations
     });
 });
 
 // Health check
 app.get('/health', (req, res) => {
     res.json({ 
-        status: 'OK', 
+        status: 'OK 🟢',
         timestamp: new Date().toISOString(),
-        uptime: process.uptime()
+        uptime: process.uptime(),
+        calculations: calculations.length,
+        version: '1.0.0'
+    });
+});
+
+// Server stats
+app.get('/api/stats', (req, res) => {
+    const totalCalculations = calculations.length;
+    const totalLoanAmount = calculations.reduce((sum, calc) => sum + calc.loan_amount, 0);
+    
+    res.json({
+        success: true,
+        data: {
+            totalCalculations: totalCalculations,
+            totalLoanAmount: totalLoanAmount,
+            serverUptime: process.uptime()
+        }
     });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`🚀 EMI Calculator Backend running on port ${PORT}`);
-    console.log(`📊 API Base URL: http://localhost:${PORT}`);
+    console.log(`📍 Local: http://localhost:${PORT}`);
+    console.log(`🩺 Health: http://localhost:${PORT}/health`);
 });

@@ -1,5 +1,4 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const app = express();
 
@@ -7,7 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Simple in-memory storage (No database errors)
+// Simple in-memory storage (No database needed)
 let calculations = [{
     id: 1,
     loan_amount: 5000000,
